@@ -560,10 +560,6 @@ static inline ncclResult_t process_completions(
 
 		comp_flags = cq_entry[comp_idx].flags;
 
-		/* This accounts for connect message send in ofi_connect() */
-		if (OFI_UNLIKELY(cq_entry[comp_idx].op_context == NULL))
-			continue;
-
 		req = container_of(cq_entry[comp_idx].op_context,
 				   nccl_ofi_req_t, ctx);
 		if (OFI_UNLIKELY(req == NULL)) {
@@ -950,8 +946,15 @@ static ncclResult_t ofi_connect(int dev, void *handle, void **sendComm)
 
 	/* Send "connect" message to remote EP */
 	do {
+		req = allocate_nccl_ofi_request(sComm->nccl_ofi_reqs_fl);
+		if (OFI_UNLIKELY(req == NULL)) {
+			ret = ncclSystemError;
+			NCCL_OFI_WARN("Unable to get NCCL OFI request for device %d",
+				     sComm->dev);
+			goto error;
+		}
 		rc = fi_tsend(sComm->local_ep, NULL, 0, NULL, sComm->remote_ep,
-			      sComm->tag | ~max_tag, NULL);
+			      sComm->tag | ~max_tag, &req->ctx);
 		if (rc == 0)
 			break;
 		else if (rc == -FI_EAGAIN) {
